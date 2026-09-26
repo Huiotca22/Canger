@@ -2,6 +2,9 @@
 
 Настольный лаунчер Minecraft на **Tauri 2 + Rust + React**. Основной runtime приложения находится в `frontend/` и `src-tauri/`; Node.js backend в `src/` сохранён как legacy CLI/HTTP-сервис.
 
+**Сайт проекта:** https://huiotca22.github.io/canger-site/
+**Связь:** Telegram [@ponifug](https://t.me/ponifug) — баги, вопросы, предложения.
+
 > **Платформа релиза 0.1.0 — Windows (x64) только.** Собираются и проверяются исключительно
 > `NSIS` и `MSI`. Код частично содержит Unix-ветки (`data root`, `xdg-open`, разделитель
 > classpath, natives, Adoptium `tar.gz`), но Linux/macOS **никогда не собирались и не
