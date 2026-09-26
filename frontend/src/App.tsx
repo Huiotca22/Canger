@@ -1240,44 +1240,6 @@ export default function App() {
     setToast({ id: String(Date.now()), type, title, message });
   };
 
-  const [curseforgeKeySet, setCurseforgeKeySet] = useState<boolean | null>(null);
-  const [curseforgeKeyInput, setCurseforgeKeyInput] = useState('');
-  const [curseforgeKeySaving, setCurseforgeKeySaving] = useState(false);
-
-  useEffect(() => {
-    if (!tauriAvailable) return;
-    let active = true;
-    void invoke<boolean>('get_curseforge_key_status')
-      .then((configured) => { if (active) setCurseforgeKeySet(configured); })
-      .catch(() => { if (active) setCurseforgeKeySet(null); });
-    return () => { active = false; };
-  }, []);
-
-  const saveCurseforgeKey = async () => {
-    if (!tauriAvailable) return;
-    const value = curseforgeKeyInput.trim();
-    setCurseforgeKeySaving(true);
-    try {
-      const configured = await invoke<boolean>('set_curseforge_key', {
-        apiKey: value.length > 0 ? value : null,
-      });
-      setCurseforgeKeySet(configured);
-      setCurseforgeKeyInput('');
-      if (value.length > 0) {
-        showToast('success', 'Ключ CurseForge сохранён', 'Каталог CurseForge снова доступен.');
-        setCatalogItems([]);
-        setHasMoreCatalog(true);
-        setTab('mods');
-      } else {
-        showToast('info', 'Ключ CurseForge удалён', 'Каталог CurseForge будет недоступен.');
-      }
-    } catch (error) {
-      showToast('error', 'Не удалось сохранить ключ', String(error));
-    } finally {
-      setCurseforgeKeySaving(false);
-    }
-  };
-
   useEffect(() => {
     if (!tauriAvailable) return;
     let mounted = true;
@@ -3168,37 +3130,6 @@ export default function App() {
                   onPointerUp={() => persistRam(ram)}
                   onKeyUp={() => persistRam(ram)}
                 />
-                <div className="set-row">
-                  <span className="set-label">CurseForge</span>
-                  <span className="set-value">{curseforgeKeySet ? 'подключён' : 'не настроен'}</span>
-                </div>
-                <div className="cf-key-row">
-                  <input
-                    className="cf-key-input"
-                    type="password"
-                    aria-label="CurseForge API key"
-                    placeholder={curseforgeKeySet ? 'Ключ сохранён — введите новый' : 'Вставьте API-ключ CurseForge'}
-                    value={curseforgeKeyInput}
-                    autoComplete="off"
-                    spellCheck={false}
-                    disabled={!tauriAvailable || curseforgeKeySaving}
-                    onChange={(e) => setCurseforgeKeyInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        void saveCurseforgeKey();
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="cf-key-btn"
-                    disabled={!tauriAvailable || curseforgeKeySaving}
-                    onClick={() => void saveCurseforgeKey()}
-                  >
-                    {curseforgeKeyInput.trim() ? 'Сохранить' : 'Удалить'}
-                  </button>
-                </div>
               </div>
             </div>
             <div className={`tabview wide${tab === 'mods' ? ' visible' : ''}`}>

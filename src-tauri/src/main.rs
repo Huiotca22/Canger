@@ -889,40 +889,6 @@ fn resolve_curseforge_key() -> Option<String> {
     stored_curseforge_key()
 }
 
-#[tauri::command]
-fn get_curseforge_key_status() -> Result<bool, String> {
-    Ok(resolve_curseforge_key().is_some())
-}
-
-#[tauri::command]
-fn set_curseforge_key(api_key: Option<String>) -> Result<bool, String> {
-    let mut settings = read_launcher_settings();
-    let normalized = api_key.as_deref().map(str::trim).unwrap_or_default();
-    if normalized.is_empty() {
-        settings["curseforgeApiKey"] = serde_json::Value::Null;
-    } else {
-        if !is_valid_curseforge_key(normalized) {
-            return Err("CurseForge API key has an invalid format".into());
-        }
-        settings["curseforgeApiKey"] = serde_json::Value::String(normalized.to_string());
-    }
-
-    let path = launcher_settings_path();
-    if let Some(parent) = path.parent() {
-        ensure_directory_no_follow(parent)?;
-    }
-    let serialized = serde_json::to_string_pretty(&settings)
-        .map_err(|error| format!("Failed to serialize settings: {}", error))?;
-    let temp = temporary_download_path(&path);
-    fs::write(&temp, serialized.as_bytes())
-        .map_err(|error| format!("Failed to write settings: {}", error))?;
-    if let Err(error) = commit_download(&temp, &path) {
-        let _ = remove_file_no_follow(&temp);
-        return Err(format!("Failed to save settings: {}", error));
-    }
-    Ok(resolve_curseforge_key().is_some())
-}
-
 #[cfg(windows)]
 fn trusted_explorer_path() -> Option<PathBuf> {
     use std::os::windows::ffi::OsStringExt;
@@ -5451,9 +5417,7 @@ fn main() {
             write_game_file,
             move_game_path,
             install_mod_file,
-            fetch_curseforge_api,
-            get_curseforge_key_status,
-            set_curseforge_key
+            fetch_curseforge_api
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

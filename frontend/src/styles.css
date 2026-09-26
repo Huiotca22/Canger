@@ -755,46 +755,6 @@ body {
   box-shadow: none;
   cursor: pointer;
 }
-.cf-key-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin-top: 2px;
-}
-.cf-key-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.28);
-  color: #fff;
-  font-size: 12px;
-  outline: none;
-}
-.cf-key-input:focus {
-  border-color: color-mix(in srgb, var(--acc-1) 60%, transparent);
-}
-.cf-key-input:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.cf-key-btn {
-  flex: 0 0 auto;
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: none;
-  background: color-mix(in srgb, var(--acc-1) 24%, rgba(255, 255, 255, 0.05));
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.cf-key-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
 .pill-btn.active {
   background: color-mix(in srgb, var(--acc-1) 18%, rgba(255, 255, 255, 0.04));
   color: #fff;

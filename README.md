@@ -29,7 +29,7 @@
 - установка сборок Modrinth/CurseForge честно сообщает о частичной установке и применяет `overrides/` из `.mrpack`;
 - защита служебных файлов версии: `<id>.json`, `<id>.jar`, `vanilla.json` и `natives` не удаляются и не перезаписываются файловым менеджером;
 - Profiles удалены из Tauri UI и IPC: выбранная версия сама определяет `--gameDir` и папку модов;
-- CurseForge API-ключ задаётся в Настройках и хранится в `%APPDATA%\.minecraft\canger\settings.json` (или через `CANGER_CURSEFORGE_API_KEY`);
+- CurseForge API-ключ читается из переменной окружения `CANGER_CURSEFORGE_API_KEY` или из файла `%APPDATA%\.minecraft\canger\settings.json` (ключ `curseforgeApiKey`); отдельного меню в приложении нет;
 - старый `profiles.json` и legacy-данные не удаляются автоматически, но больше не участвуют в выборе версии или запуске.
 
 ## Forge
@@ -123,12 +123,17 @@ npm test
 
 HTTP server всегда слушает только `127.0.0.1`, проверяет loopback/Host/Origin и не принимает `jvmExtra` или произвольный `instanceDir`.
 
-CurseForge API требует пользовательский ключ. В приложении его можно ввести на
-вкладке «Настройки» — тогда он сохраняется в `%APPDATA%\.minecraft\canger\settings.json`.
-Альтернатива для запуска из окружения:
+CurseForge API требует пользовательский ключ. Меню для его ввода в приложении
+нет: ключ задаётся переменной окружения
 
 ```powershell
 $env:CANGER_CURSEFORGE_API_KEY = 'your-key'
+```
+
+или вручную файлом `%APPDATA%\.minecraft\canger\settings.json`:
+
+```json
+{ "curseforgeApiKey": "your-key" }
 ```
 
 Ключ не хранится в исходниках. Без него поиск CurseForge отключается, Modrinth и установка Fabric/Forge/NeoForge продолжают работать.

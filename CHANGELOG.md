@@ -12,7 +12,9 @@ All notable changes to canger are documented in this file.
 - Official NeoForge Maven metadata discovery.
 - Legacy native classifier handling for Minecraft 1.8–1.18.2.
 - Mojang `os.version` rule matching (`^10\.`-style patterns) instead of blanket rejection.
-- CurseForge API key persistence in `%APPDATA%\.minecraft\canger\settings.json` with a Settings field.
+- CurseForge API key can be supplied through `CANGER_CURSEFORGE_API_KEY` or
+  `%APPDATA%\.minecraft\canger\settings.json`; there is deliberately no key entry
+  form in the application UI.
 - `write_game_file` command used to apply `.mrpack` `overrides/` entries.
 - Deterministic newest-first ordering of installed versions.
 - GitHub release metadata: `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, CI workflow, `rust-toolchain.toml`, `.nvmrc`.
