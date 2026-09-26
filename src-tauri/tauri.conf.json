@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "canger",
+  "version": "0.1.0",
+  "identifier": "com.canger.launcher",
+  "build": {
+    "frontendDist": "../frontend/dist",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": "npm run dev --prefix frontend",
+    "beforeBuildCommand": "npm run build --prefix frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "canger",
+        "width": 700,
+        "height": 400,
+        "resizable": false,
+        "maximizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https://api.modrinth.com https://api.curseforge.com https://piston-meta.mojang.com https://resources.download.minecraft.net https://meta.fabricmc.net https://files.minecraftforge.net https://cdn.modrinth.com https://api.adoptium.net https://repo1.maven.org https://mediafilez.forgecdn.net https://media.forgecdn.net https://edge.forgecdn.net; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": ["icons/icon.ico"]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "canger-backend",
+  "version": "0.1.0",
+  "description": "Backend for canger Minecraft launcher",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js --server",
+    "server": "node src/index.js --server",
+    "test": "node test/smoke.js",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "check:frontend": "npm run check --prefix frontend",
+    "check": "npm test && npm run check:frontend && npm run test:rust"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "license": "MIT"
+}
