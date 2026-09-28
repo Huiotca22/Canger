@@ -3707,6 +3707,45 @@ fn extract_java_zip(archive_path: &Path, unpack_dir: &Path) -> Result<(), String
     Ok(())
 }
 
+fn validate_java_link_target(
+    link_path: &str,
+    target: &str,
+    is_symlink: bool,
+) -> Result<(), String> {
+    use std::path::Component;
+
+    if target.is_empty() || target.contains('\0') {
+        return Err("Java archive link target is invalid".into());
+    }
+    if Path::new(target).is_absolute() {
+        return Err("Java archive link target must be relative".into());
+    }
+
+    let mut depth: i64 = 0;
+    if is_symlink {
+        if let Some(parent) = Path::new(link_path).parent() {
+            for component in parent.components() {
+                if matches!(component, Component::Normal(_)) {
+                    depth += 1;
+                }
+            }
+        }
+    }
+
+    for component in Path::new(target).components() {
+        match component {
+            Component::Normal(_) => depth += 1,
+            Component::ParentDir => depth -= 1,
+            Component::CurDir => {}
+            _ => return Err("Java archive link target has an unsupported component".into()),
+        }
+        if depth < 0 {
+            return Err("Java archive link escapes the unpack directory".into());
+        }
+    }
+    Ok(())
+}
+
 fn extract_java_tar_gz(archive_path: &Path, unpack_dir: &Path) -> Result<(), String> {
     use std::collections::HashSet;
 
@@ -3737,9 +3776,6 @@ fn extract_java_tar_gz(archive_path: &Path, unpack_dir: &Path) -> Result<(), Str
         {
             continue;
         }
-        if kind.is_symlink() || kind.is_hard_link() {
-            return Err("Java archive contains a link entry".into());
-        }
         if !kind.is_file() && !kind.is_dir() {
             return Err("Java archive contains a special file".into());
         }
@@ -3751,6 +3787,35 @@ fn extract_java_tar_gz(archive_path: &Path, unpack_dir: &Path) -> Result<(), Str
         let relative = safe_archive_relative_path(&path)?;
         if !paths.insert(relative.clone()) {
             return Err("Java archive contains duplicate paths".into());
+        }
+
+        if kind.is_symlink() || kind.is_hard_link() {
+            let is_symlink = kind.is_symlink();
+            let link_target = entry
+                .link_name()
+                .map_err(|error| format!("Java archive contains an invalid link: {}", error))?
+                .map(|target| target.to_string_lossy().into_owned())
+                .ok_or_else(|| "Java archive contains a link without a target".to_string())?;
+            validate_java_link_target(&relative.to_string_lossy(), &link_target, is_symlink)?;
+            let (output, _) = prepare_archive_output(unpack_dir, &relative, false)?;
+            if is_symlink {
+                #[cfg(unix)]
+                {
+                    std::os::unix::fs::symlink(&link_target, &output)
+                        .map_err(|error| format!("Failed to create Java symlink: {}", error))?;
+                }
+                #[cfg(not(unix))]
+                {
+                    return Err("Java archive links are not supported on this platform".into());
+                }
+            } else {
+                fs::hard_link(
+                    output.parent().unwrap_or(unpack_dir).join(&link_target),
+                    &output,
+                )
+                .map_err(|error| format!("Failed to create Java hard link: {}", error))?;
+            }
+            continue;
         }
         let entry_size = if kind.is_file() { entry.size() } else { 0 };
         if entry_size > JAVA_MAX_ENTRY_BYTES {
@@ -5775,6 +5840,21 @@ mod tests {
             "1.21.1-fabric",
             &join_relative(Some("saves/world"), "level.dat")
         ));
+    }
+
+    #[test]
+    fn java_archive_links_may_point_inside_the_unpack_tree_only() {
+        assert!(validate_java_link_target("jdk/lib/libjvm.so", "server/libjvm.so", true).is_ok());
+        assert!(validate_java_link_target("jdk/lib/x.so", "../lib/server/libjvm.so", true).is_ok());
+        assert!(validate_java_link_target("jdk/bin/jspawnhelper", "jspawnhelper64", true).is_ok());
+        assert!(validate_java_link_target("jdk/lib/a.so", "b/a.so", false).is_ok());
+        assert!(validate_java_link_target("jdk/lib/a.so", "../../etc/passwd", true).is_ok());
+
+        assert!(validate_java_link_target("jdk/lib/a.so", "/etc/passwd", true).is_err());
+        assert!(validate_java_link_target("jdk/lib/a.so", "../../../etc/passwd", true).is_err());
+        assert!(validate_java_link_target("a/b/c", "../../../../outside", true).is_err());
+        assert!(validate_java_link_target("jdk/a", "../outside", false).is_err());
+        assert!(validate_java_link_target("jdk/a", "", true).is_err());
     }
 
     #[test]
