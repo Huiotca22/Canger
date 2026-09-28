@@ -1696,7 +1696,10 @@ fn parse_libraries_from_json(
     downloads
 }
 
-async fn download_libraries_parallel(items: Vec<LibraryDownload>) -> Result<(), String> {
+async fn download_libraries_parallel(
+    items: Vec<LibraryDownload>,
+    on_progress: Option<std::sync::Arc<dyn Fn(u64, u64) + Send + Sync>>,
+) -> Result<(), String> {
     for item in &items {
         if item.url.trim().is_empty() {
             let metadata = fs::symlink_metadata(&item.dest).map_err(|error| {
@@ -1776,11 +1779,15 @@ async fn download_libraries_parallel(items: Vec<LibraryDownload>) -> Result<(), 
     use std::sync::{Arc, Mutex};
     let results: Arc<Mutex<Vec<Result<PathBuf, String>>>> = Arc::new(Mutex::new(Vec::new()));
     let queue = Arc::new(Mutex::new(missing));
+    let completed_count = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let total_count = expected_downloads as u64;
     let mut handles = Vec::new();
 
     for _ in 0..8 {
         let queue = Arc::clone(&queue);
         let results = Arc::clone(&results);
+        let completed_count = Arc::clone(&completed_count);
+        let on_progress = on_progress.clone();
         handles.push(tokio::spawn(async move {
             loop {
                 let item = {
@@ -1825,6 +1832,11 @@ async fn download_libraries_parallel(items: Vec<LibraryDownload>) -> Result<(), 
                     results.push(Ok(item.dest));
                 } else {
                     results.push(Err(format!("{}: {}", item.dest.display(), last_error)));
+                }
+                drop(results);
+                let done = completed_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                if let Some(callback) = on_progress.as_ref() {
+                    callback(done, total_count);
                 }
             }
         }));
@@ -2227,7 +2239,23 @@ async fn download_version(
             },
         );
 
-        download_libraries_parallel(all_libraries).await?;
+        let app_for_progress = app.clone();
+        let version_for_progress = version_name.clone();
+        let progress = std::sync::Arc::new(move |done: u64, total: u64| {
+            let ratio = done.saturating_mul(100).checked_div(total).unwrap_or(100);
+            let _ = app_for_progress.emit(
+                "download-progress",
+                ProgressPayload {
+                    version: version_for_progress.clone(),
+                    percent: 75 + (ratio * 7 / 100) as u32,
+                    current: done,
+                    total,
+                    stage: format!("Библиотеки ({}/{})...", done, total),
+                },
+            );
+        });
+
+        download_libraries_parallel(all_libraries, Some(progress)).await?;
     }
 
     if let (Some(ai_url), Some(ai_id)) = (asset_index_url, asset_index_id) {
@@ -2293,58 +2321,56 @@ async fn download_version(
                             );
 
                             use futures_util::{stream, StreamExt};
-                            let downloaded_count =
-                                std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-                            let failures =
-                                std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-                            let results = stream::iter(asset_downloads)
-                                .map(|(url, dest)| {
-                                    let downloaded_count = std::sync::Arc::clone(&downloaded_count);
-                                    let failures = std::sync::Arc::clone(&failures);
-                                    async move {
-                                        match download_file_http_limited(
-                                            &url,
-                                            &dest,
-                                            50 * 1024 * 1024,
-                                        )
+                            let total = total_assets as u64;
+                            let mut failures: Vec<String> = Vec::new();
+                            let mut completed = 0u64;
+                            let mut in_flight = stream::iter(asset_downloads)
+                                .map(|(url, dest)| async move {
+                                    match download_file_http_limited(&url, &dest, 50 * 1024 * 1024)
                                         .await
-                                        {
-                                            Ok(_) => {
-                                                let verification = dest
-                                                    .file_name()
-                                                    .and_then(|name| name.to_str())
-                                                    .ok_or_else(|| {
-                                                        "Asset path has no file name".to_string()
-                                                    })
-                                                    .and_then(|hash| verify_sha1(&dest, hash));
-                                                if let Err(error) = verification {
+                                    {
+                                        Ok(_) => {
+                                            let hash = dest
+                                                .file_name()
+                                                .and_then(|name| name.to_str())
+                                                .unwrap_or_default()
+                                                .to_string();
+                                            match verify_sha1(&dest, &hash) {
+                                                Ok(()) => None,
+                                                Err(error) => {
                                                     let _ = fs::remove_file(&dest);
-                                                    failures
-                                                        .lock()
-                                                        .unwrap_or_else(|e| e.into_inner())
-                                                        .push(error);
-                                                } else {
-                                                    downloaded_count.fetch_add(
-                                                        1,
-                                                        std::sync::atomic::Ordering::Relaxed,
-                                                    );
+                                                    Some(error)
                                                 }
                                             }
-                                            Err(error) => {
-                                                failures
-                                                    .lock()
-                                                    .unwrap_or_else(|e| e.into_inner())
-                                                    .push(error);
-                                            }
                                         }
+                                        Err(error) => Some(error),
                                     }
                                 })
-                                .buffer_unordered(8)
-                                .collect::<Vec<_>>()
-                                .await;
-                            let _ = results;
+                                .buffer_unordered(8);
 
-                            let failures = failures.lock().unwrap_or_else(|e| e.into_inner());
+                            while let Some(result) = in_flight.next().await {
+                                completed += 1;
+                                if let Some(error) = result {
+                                    failures.push(error);
+                                }
+                                if completed.is_multiple_of(20) || completed == total {
+                                    let ratio = completed
+                                        .saturating_mul(100)
+                                        .checked_div(total)
+                                        .unwrap_or(100);
+                                    let _ = app.emit(
+                                        "download-progress",
+                                        ProgressPayload {
+                                            version: version_name.clone(),
+                                            percent: 82 + (ratio * 16 / 100) as u32,
+                                            current: completed,
+                                            total,
+                                            stage: format!("Ресурсы ({}/{})...", completed, total),
+                                        },
+                                    );
+                                }
+                            }
+
                             if !failures.is_empty() {
                                 return Err(format!(
                                     "Не удалось скачать {} ресурсов: {}",
@@ -2362,8 +2388,8 @@ async fn download_version(
                                 ProgressPayload {
                                     version: version_name.clone(),
                                     percent: 98,
-                                    current: total_assets as u64,
-                                    total: total_assets as u64,
+                                    current: total,
+                                    total,
                                     stage: "Ресурсы готовы".into(),
                                 },
                             );
@@ -4423,7 +4449,7 @@ async fn launch_game(
             error
         )
     })?;
-    download_libraries_parallel(target_libs.clone()).await?;
+    download_libraries_parallel(target_libs.clone(), None).await?;
 
     let mut cp_entries = vec![jar_file.to_string_lossy().to_string()];
     let mut seen_jars = std::collections::HashSet::new();
