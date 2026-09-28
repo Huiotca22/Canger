@@ -4,6 +4,26 @@ All notable changes to canger are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Import and move into a subfolder failed with `Invalid import destination` on
+  Windows. The guard derived the relative path by stripping the game directory off
+  a canonicalized target, but `canonicalize` returns a `\\?\` verbatim path on
+  Windows, so the strip never matched. Guards are now built from the caller's
+  subpath string; the write still goes to the validated path.
+
+### Added
+
+- Linux: Java discovery for `/usr/lib/jvm`, `/usr/lib64/jvm`, `/usr/java`,
+  `/opt/java`, `/Library/Java/JavaVirtualMachines`, `~/.jdks` and
+  `~/.sdkman/candidates/java`. Java executables may be symlinks on Unix, which is
+  how distributions usually expose them, as long as the link resolves to a regular
+  file. Strict no-symlink handling is unchanged for downloads, extraction and
+  atomic replacement.
+- Linux bundle targets `deb` and `appimage` in `src-tauri/tauri.linux.conf.json`,
+  plus `32x32.png`, `128x128.png`, `128x128@2x.png` and a 512×512 `icon.png`.
+- `run-tauri.sh` and `canger-linux-setup.sh` for Arch.
+
 ### Added
 
 - Per-version game directories with isolated `mods`, `saves`, `config`, `resourcepacks`, `shaderpacks`, `screenshots`, `logs` and `options.txt`.
@@ -17,7 +37,7 @@ All notable changes to canger are documented in this file.
   form in the application UI.
 - `write_game_file` command used to apply `.mrpack` `overrides/` entries.
 - Deterministic newest-first ordering of installed versions.
-- GitHub release metadata: `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, CI workflow, `rust-toolchain.toml`, `.nvmrc`.
+- GitHub release metadata: `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `rust-toolchain.toml`, `.nvmrc`.
 
 ### Changed
 

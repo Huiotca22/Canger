@@ -81,7 +81,7 @@ before this project; the site establishes one and the desktop icon follows it.
 - Real release artifacts with checksums: `canger_0.1.0_x64-setup.exe` (3.1 MB),
   `canger_0.1.0_x64_en-US.msi` (4.4 MB), `canger.exe` (12.7 MB).
 - Test suite that gates the release: 36 Rust tests, 25 Node smoke tests, clippy with
-  `-D warnings`, CI workflow in `.github/workflows/ci.yml`.
+  `-D warnings`. There is no CI workflow; the suite is run locally before publishing.
 - Screenshots of the real application window, captured from the running release
   build.
 - Generated brand assets: app icon, favicon, social preview.

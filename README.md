@@ -5,11 +5,10 @@
 **Сайт проекта:** https://huiotca22.github.io/canger-site/
 **Связь:** Telegram [@ponifug](https://t.me/ponifug) — баги, вопросы, предложения.
 
-> **Платформа релиза 0.1.0 — Windows (x64) только.** Собираются и проверяются исключительно
-> `NSIS` и `MSI`. Код частично содержит Unix-ветки (`data root`, `xdg-open`, разделитель
-> classpath, natives, Adoptium `tar.gz`), но Linux/macOS **никогда не собирались и не
-> проверялись**, поэтому не заявляются как поддерживаемые. План кроссплатформы — в
-> разделе «Известные ограничения».
+> **Платформа релиза 0.1.0 — Windows (x64).** Проверенные сборки: `NSIS` и `MSI`.
+> Поддержка Linux в разработке: код собирается под Linux, иконки и bundle-таргеты
+> `deb`/`appimage` настроены, но запуск на реальной Linux-машине ещё не подтверждён.
+> macOS не поддерживается. План кроссплатформы — в разделе «Известные ограничения».
 
 ## Что реализовано
 
@@ -114,6 +113,33 @@ Production frontend build:
 npm run build --prefix frontend
 ```
 
+### Linux (Arch)
+
+Зависимости Tauri на Arch:
+
+```bash
+sudo pacman -S --needed webkit2gtk-4.1 gtk3 libappindicator-gtk3 librsvg patchelf
+```
+
+Сборка пакета `deb` и `AppImage`:
+
+```bash
+npm install
+npm install --prefix frontend
+npm run build --prefix frontend
+cargo tauri build
+```
+
+Или запуск в режиме разработки:
+
+```bash
+./run-tauri.sh
+```
+
+Таргеты для Linux заданы в `src-tauri/tauri.linux.conf.json`, поэтому сборка на
+Windows продолжает делать только `NSIS` и `MSI`. Данные игры на Linux лежат в
+`~/.minecraft` рядом с общими библиотеками и ассетами.
+
 ## Legacy Node backend
 
 ```powershell
@@ -143,25 +169,21 @@ $env:CANGER_CURSEFORGE_API_KEY = 'your-key'
 
 ## Известные ограничения
 
-- Релиз 0.1.0 поддерживает **только Windows x64**: `NSIS` и `MSI`. Другие платформы
-  не собираются и не тестируются.
+- Релиз 0.1.0 проверен на **Windows x64**: `NSIS` и `MSI`. Поддержка Linux в
+  разработке — сборка и запуск на реальной Linux-машине ещё не подтверждены.
+- macOS не поддерживается: нет `icon.icns`, не собирался и не тестировался.
 - Windows-установщики (`NSIS`, `MSI`) не подписаны Authenticode: SmartScreen может
   показывать предупреждение до установки сертификата.
 - Legacy `reqwest 0.11` и `zip 0.6` в `src-tauri/Cargo.toml` оставлены как есть:
   обновление требует отдельного прохода по API и не блокирует релиз.
-- Поиск установленной Java работает только по Windows-путям
-  (`C:\Program Files\Eclipse Adoptium`, `.sklauncher`, `kjstudio`, `LOCALAPPDATA`).
 - Перенос данных между Tauri-приложением и legacy Node backend не выполняется.
 
 ### План кроссплатформы (вне объёма 0.1.0)
 
-1. Иконки `icon.icns` и Linux-`PNG` для bundle-таргетов `app`/`dmg`/`deb`/`AppImage`.
-2. Unix-ветки в `find_existing_java` (`/usr/lib/jvm`, `/Library/Java/JavaVirtualMachines`,
-   `JAVA_HOME`).
-3. `run-tauri.sh` как аналог `run-tauri.ps1`.
-4. CI-матрица `windows-latest` / `ubuntu-latest` / `macos-latest` с установкой
-   `libwebkit2gtk-4.1-dev` и системных библиотек GTK.
-5. Ручной прогон установки и запуска версий на macOS и Linux.
+1. Подтвердить сборку и запуск на Linux в дистрибутивах на базе Arch и Debian.
+2. Иконка `icon.icns` и таргеты `app`/`dmg` для macOS.
+3. Ветки поиска Java в `JAVA_HOME` и `~/.sdkman` для macOS.
+4. Проверка оконного режима на Wayland с прозрачностью.
 
 ## Проверки безопасности
 

@@ -3,6 +3,8 @@ frontend/dist/
 src-tauri/target/
 src-tauri/gen/schemas/
 site-assets/
+site/
+site-astro/
 logs/*.log
 logs/*.log.gz
 .env

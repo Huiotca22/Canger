@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -393,6 +393,29 @@ fn is_safe_regular_file(path: &Path) -> bool {
     fs::symlink_metadata(path)
         .map(|metadata| metadata.is_file() && !is_link_metadata(&metadata))
         .unwrap_or(false)
+}
+
+fn is_safe_java_executable(path: &Path) -> bool {
+    if is_safe_regular_file(path) {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) if is_link_metadata(&metadata) => {}
+            _ => return false,
+        }
+        match fs::canonicalize(path) {
+            Ok(resolved) => fs::metadata(&resolved)
+                .map(|metadata| metadata.is_file())
+                .unwrap_or(false),
+            Err(_) => false,
+        }
+    }
 }
 
 fn remove_file_no_follow(path: &Path) -> Result<(), String> {
@@ -3216,6 +3239,8 @@ fn scan_for_javas(dir: &Path, depth: u32, max_depth: u32, found: &mut Vec<(u32, 
     }
     match fs::symlink_metadata(dir) {
         Ok(metadata) if metadata.is_dir() && !is_link_metadata(&metadata) => {}
+        #[cfg(not(windows))]
+        Ok(metadata) if metadata.is_dir() && is_link_metadata(&metadata) => {}
         _ => return,
     }
     if let Ok(entries) = fs::read_dir(dir) {
@@ -3225,12 +3250,13 @@ fn scan_for_javas(dir: &Path, depth: u32, max_depth: u32, found: &mut Vec<(u32, 
                 Ok(metadata) => metadata,
                 Err(_) => continue,
             };
-            if metadata.is_dir() && !metadata.is_symlink() {
+            let is_dir = metadata.is_dir() || (metadata.is_symlink() && path.is_dir());
+            if is_dir {
                 let jw = path.join("bin").join(JAVA_BIN);
                 let j = path.join("bin").join("java.exe");
-                let exe = if is_safe_regular_file(&jw) {
+                let exe = if is_safe_java_executable(&jw) {
                     Some(jw)
-                } else if is_safe_regular_file(&j) {
+                } else if is_safe_java_executable(&j) {
                     Some(j)
                 } else {
                     None
@@ -3258,12 +3284,7 @@ fn find_java_on_path() -> Option<PathBuf> {
             return None;
         }
         let candidate = directory.join(EXECUTABLE);
-        let metadata = fs::symlink_metadata(&candidate).ok()?;
-        if metadata.is_file() && !is_link_metadata(&metadata) {
-            Some(candidate)
-        } else {
-            None
-        }
+        is_safe_java_executable(&candidate).then_some(candidate)
     })
 }
 
@@ -3312,14 +3333,35 @@ fn find_existing_java(mc_dir: &Path, required_major: u32) -> Option<PathBuf> {
         scan_for_javas(&PathBuf::from(base), 0, 3, &mut candidates);
     }
 
+    if !cfg!(windows) {
+        let unix_dirs = [
+            "/usr/lib/jvm",
+            "/usr/lib64/jvm",
+            "/usr/java",
+            "/opt/java",
+            "/Library/Java/JavaVirtualMachines",
+        ];
+
+        for base in unix_dirs {
+            scan_for_javas(&PathBuf::from(base), 0, 3, &mut candidates);
+        }
+
+        if let Some(base) = dirs::home_dir() {
+            let jdks = base.join(".jdks");
+            scan_for_javas(&jdks, 0, 3, &mut candidates);
+            let sdkman_candidates = base.join(".sdkman").join("candidates").join("java");
+            scan_for_javas(&sdkman_candidates, 0, 3, &mut candidates);
+        }
+    }
+
     if let Ok(home) = std::env::var("JAVA_HOME") {
         let home_path = PathBuf::from(home);
         if home_path.is_absolute() {
             let p_jw = home_path.join("bin").join(JAVA_BIN);
             let p_j = home_path.join("bin").join("java.exe");
-            let exe = if is_safe_regular_file(&p_jw) {
+            let exe = if is_safe_java_executable(&p_jw) {
                 Some(p_jw)
-            } else if is_safe_regular_file(&p_j) {
+            } else if is_safe_java_executable(&p_j) {
                 Some(p_j)
             } else {
                 None
@@ -5046,6 +5088,21 @@ fn open_game_path(relative_path: Option<String>, version: String) -> Result<(), 
     open_in_file_manager(&path, path.is_file())
 }
 
+fn join_relative(sub: Option<&str>, file_name: &str) -> String {
+    let name = file_name.replace('\\', "/");
+    match sub {
+        Some(prefix) => {
+            let normalized = prefix.replace('\\', "/").trim_matches('/').to_string();
+            if normalized.is_empty() {
+                name
+            } else {
+                format!("{}/{}", normalized, name)
+            }
+        }
+        None => name,
+    }
+}
+
 fn is_protected_version_path(version_id: &str, relative_path: &str) -> bool {
     let normalized = relative_path
         .replace('\\', "/")
@@ -5139,9 +5196,13 @@ fn import_game_files(
     version: String,
 ) -> Result<Vec<String>, String> {
     let mc_dir = resolve_game_dir(&version)?;
-    let dest_dir = if let Some(sub) = target_subpath {
-        let path = validate_subpath(&mc_dir, &sub)?;
-        if is_protected_version_path(&version, &sub) {
+    let import_sub = target_subpath
+        .as_deref()
+        .map(|sub| sub.trim().trim_matches(&['/', '\\'][..]).to_string())
+        .filter(|sub| !sub.is_empty());
+    let dest_dir = if let Some(sub) = import_sub.as_deref() {
+        let path = validate_subpath(&mc_dir, sub)?;
+        if is_protected_version_path(&version, sub) {
             return Err("Служебные файлы и папки версии изменять нельзя".into());
         }
         path
@@ -5177,11 +5238,7 @@ fn import_game_files(
         }
 
         let target_file = dest_dir.join(&file_name);
-        let target_relative = target_file
-            .strip_prefix(&mc_dir)
-            .map_err(|_| "Invalid import destination".to_string())?
-            .to_string_lossy()
-            .replace('\\', "/");
+        let target_relative = join_relative(import_sub.as_deref(), &file_name);
         if is_protected_version_path(&version, &target_relative) {
             return Err("Служебные файлы и папки версии изменять нельзя".into());
         }
@@ -5278,8 +5335,12 @@ fn move_game_path(
         return Err("Исходный файл или папка не найден(а)".into());
     }
 
-    let dest_dir = if let Some(sub) = target_subpath {
-        validate_subpath(&mc_dir, &sub)?
+    let dest_sub = target_subpath
+        .as_deref()
+        .map(|sub| sub.trim().trim_matches(&['/', '\\'][..]).to_string())
+        .filter(|sub| !sub.is_empty());
+    let dest_dir = if let Some(sub) = dest_sub.as_deref() {
+        validate_subpath(&mc_dir, sub)?
     } else {
         mc_dir.clone()
     };
@@ -5295,11 +5356,7 @@ fn move_game_path(
     };
 
     let target = dest_dir.join(file_name);
-    let target_relative = target
-        .strip_prefix(&mc_dir)
-        .map_err(|_| "Invalid move destination".to_string())?
-        .to_string_lossy()
-        .replace('\\', "/");
+    let target_relative = join_relative(dest_sub.as_deref(), &file_name.to_string_lossy());
     if is_protected_version_path(&version, &target_relative) {
         return Err("Служебные файлы и папки версии изменять нельзя".into());
     }
@@ -5659,6 +5716,39 @@ mod tests {
         assert!(!is_valid_curseforge_key("has space"));
         assert!(!is_valid_curseforge_key("quote\"injection"));
         assert!(!is_valid_curseforge_key(&"a".repeat(257)));
+    }
+
+    #[test]
+    fn internal_file_guards_work_through_a_subpath() {
+        // Guards must be built from the caller's subpath string. Deriving the
+        // relative path by stripping the game dir off a canonicalized target
+        // cannot work: on Windows canonicalize returns a \\?\ verbatim path, so
+        // the result never starts with the raw game dir.
+        assert_eq!(join_relative(None, "pack.jar"), "pack.jar");
+        assert_eq!(join_relative(Some(""), "pack.jar"), "pack.jar");
+        assert_eq!(join_relative(Some("mods"), "pack.jar"), "mods/pack.jar");
+        assert_eq!(
+            join_relative(Some("config/"), "mod.toml"),
+            "config/mod.toml"
+        );
+        assert_eq!(join_relative(Some("a\\b"), "c.txt"), "a/b/c.txt");
+
+        assert!(is_protected_version_path(
+            "1.21.1-fabric",
+            &join_relative(Some("natives"), "lwjgl.dll")
+        ));
+        assert!(is_protected_version_path(
+            "1.21.1-fabric",
+            &join_relative(None, "1.21.1-fabric.json")
+        ));
+        assert!(!is_protected_version_path(
+            "1.21.1-fabric",
+            &join_relative(Some("mods"), "example.jar")
+        ));
+        assert!(!is_protected_version_path(
+            "1.21.1-fabric",
+            &join_relative(Some("saves/world"), "level.dat")
+        ));
     }
 
     #[test]
